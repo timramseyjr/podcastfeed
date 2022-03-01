@@ -20,8 +20,12 @@ return [
         'author' => 'John Doe',
         'email' => 'john.doe@example.com',
         'category' => 'Technology',
-        'language' => 'en-us',
+        'language' => 'en',
         'copyright' => '2016 John Doe & Family',
+        'explicit' => 'false',
+        'feed_type' => 'episodic',
+        'categories' => ['Technology' => []],
+        'locked' => 'no'
     ],
 
 ];

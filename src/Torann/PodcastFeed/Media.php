@@ -13,6 +13,13 @@ class Media
     private $title;
 
     /**
+     * Itunes Title of media.
+     *
+     * @var string
+     */
+    private $itunes_title;
+
+    /**
      * Subtitle of media.
      *
      * @var string|null
@@ -62,6 +69,13 @@ class Media
     private $author;
 
     /**
+     * Categories of the media.
+     *
+     * @var array
+     */
+    private $categories = [];
+
+    /**
      * GUID of the media.
      *
      * @var string
@@ -76,11 +90,47 @@ class Media
     private $duration;
 
     /**
+     * Explicit flag of the media.
+     *
+     * @var string
+     */
+    private $explicit;
+
+    /**
      * URL to the image representing the media..
      *
      * @var string
      */
     private $image;
+
+    /**
+     * Length in bytes of the media file.
+     *
+     * @var string
+     */
+    private $length;
+
+    /**
+     * Podcast Season.
+     *
+     * @var integer
+     */
+    private $season;
+
+    /**
+     * Podcast Episode.
+     *
+     * @var integer
+     */
+    private $episode;
+
+    /**
+     * Type of the episode. Full, trailer, bonus.
+     *
+     * @var string
+     */
+    private $episode_type;
+
 
     /**
      * Class constructor
@@ -90,6 +140,7 @@ class Media
     public function __construct($data)
     {
         $this->title = $this->getValue($data, 'title');
+        $this->itunes_title = $this->getValue($data, 'itunes_title');
         $this->subtitle = $this->getValue($data, 'subtitle');
         $this->description = $this->getValue($data, 'description');
         $this->pubDate = $this->getValue($data, 'publish_at');
@@ -97,8 +148,14 @@ class Media
         $this->guid = $this->getValue($data, 'guid');
         $this->type = $this->getValue($data, 'type');
         $this->duration = $this->getValue($data, 'duration');
+        $this->explicit = $this->getValue($data, 'explicit');
         $this->author = $this->getValue($data, 'author');
+        $this->season = $this->getValue($data, 'season');
+        $this->episode = $this->getValue($data, 'episode');
         $this->image = $this->getValue($data, 'image');
+        $this->length = $this->getValue($data, 'length');
+        $this->link = $this->getValue($data, 'link');
+        $this->episode_type = $this->getValue($data, 'episode_type','full');
 
         // Ensure publish date is a DateTime instance
         if (is_string($this->pubDate)) {
@@ -157,23 +214,36 @@ class Media
             $item->appendChild($itune_subtitle);
         }
 
+        if($this->itunes_title){
+            $itunes_title = $dom->createElement("itunes:title", $this->itunes_title);
+            $item->appendChild($itunes_title);
+        }
+
         // Create the <description>
         $description = $dom->createElement("description");
         $description->appendChild($dom->createCDATASection($this->description));
         $item->appendChild($description);
 
-        // Create the <itunes:summary>
-        $itune_summary = $dom->createElement("itunes:summary", $this->description);
-        $item->appendChild($itune_summary);
+        // Create the <content_encoded>
+        $content_encoded = $dom->createElement("content:encoded");
+        $content_encoded->appendChild($dom->createCDATASection($this->description));
+        $item->appendChild($content_encoded);
 
         // Create the <pubDate>
         $pubDate = $dom->createElement("pubDate", $this->pubDate->format(DATE_RFC2822));
         $item->appendChild($pubDate);
 
+
+        //Link
+        $link = $dom->createElement('link');
+        $link->appendChild($dom->createCDATASection($this->link));
+        $item->appendChild($link);
+
         // Create the <enclosure>
         $enclosure = $dom->createElement("enclosure");
         $enclosure->setAttribute("url", $this->url);
         $enclosure->setAttribute("type", $this->type);
+        $enclosure->setAttribute("length", $this->length);
         $item->appendChild($enclosure);
 
         // Create the author
@@ -187,12 +257,32 @@ class Media
             $item->appendChild($itune_author);
         }
 
+        if ($this->season > 0) {
+            $season = $dom->createElement("itunes:season", intval($this->season));
+            $item->appendChild($season);
+        }
+        if ($this->episode > 0) {
+            $episode = $dom->createElement("itunes:episode", intval($this->episode));
+            $item->appendChild($episode);
+        }
+        if(!empty($this->episode_type)) {
+            // Create the <episodeType>
+            $episodeType = $dom->createElement("itunes:episodeType", $this->episode_type);
+            $item->appendChild($episodeType);
+        }
+
         // Create the <itunes:duration>
         $itune_duration = $dom->createElement("itunes:duration", $this->duration);
         $item->appendChild($itune_duration);
 
+        // Create the <itunes:explicit>
+        $explicit = $dom->createElement("itunes:explicit", (is_null($this->explicit) OR !$this->explicit OR empty($this->explicit) OR $this->explicit == 'no') ? 'false' : 'true');
+        $item->appendChild($explicit);
+
         // Create the <guid>
-        $guid = $dom->createElement("guid", $this->guid);
+        $guid = $dom->createElement("guid");
+        $guid->appendChild($dom->createCDATASection($this->guid));
+        $guid->setAttribute('isPermaLink','false');
         $item->appendChild($guid);
 
         // Create the <itunes:image>

@@ -56,11 +56,18 @@ class Manager
     private $author;
 
     /**
-     * Category of the podcast.
+     * Categories of the podcast.
+     *
+     * @var array
+     */
+    private $categories = [];
+
+    /**
+     * Explicit flag of the podcast.
      *
      * @var string
      */
-    private $category = null;
+    private $explicit = false;
 
     /**
      * Language of the podcast.
@@ -98,11 +105,18 @@ class Manager
     private $media = [];
 
     /**
+     * Locked status of the podcast.
+     *
+     * @var string
+     */
+    private $locked;
+
+    /**
      * Class constructor.
      *
      * @param  array $config
      */
-    function __construct(array $config)
+    public function __construct(array $config)
     {
         $this->config = $config;
 
@@ -119,17 +133,23 @@ class Manager
     {
         // Required
         $this->title = $this->getValue($data, 'title');
+        $this->pubDate = $this->getValue($data, 'pubDate');
+        $this->feed_type = $this->getValue($data, 'feed_type');
         $this->description = $this->getValue($data, 'description');
         $this->link = $this->getValue($data, 'link');
         $this->image = $this->getValue($data, 'image');
         $this->author = $this->getValue($data, 'author');
+        $this->pubDate = $this->getValue($data, 'pubDate');
+        $this->categories = $this->getValue($data, 'categories');
 
         // Optional values
-        $this->category = $this->getValue($data, 'category');
+        $this->explicit = $this->getValue($data, 'explicit');
         $this->subtitle = $this->getValue($data, 'subtitle');
         $this->language = $this->getValue($data, 'language');
         $this->email = $this->getValue($data, 'email');
         $this->copyright = $this->getValue($data, 'copyright');
+
+        $this->locked = $this->getValue($data, 'locked');
     }
 
     /**
@@ -138,11 +158,16 @@ class Manager
      * @param  mixed  $data
      * @param  string $key
      *
-     * @return string
+     * @return mixed
      */
     public function getValue($data, $key)
     {
         $value = array_get($data, $key, $this->getDefault($key));
+
+        // Avoid escaping categories to confort to the itunes spec
+        if($key == 'categories') {
+            return $value;
+        }
 
         return htmlspecialchars($value);
     }
@@ -203,6 +228,13 @@ class Manager
         // Create the <rss>
         $rss = $dom->createElement("rss");
         $rss->setAttribute("xmlns:itunes", "http://www.itunes.com/dtds/podcast-1.0.dtd");
+        $rss->setAttribute("xmlns:atom", "http://www.w3.org/2005/Atom");
+        $rss->setAttribute("xmlns:cc", "http://web.resource.org/cc/");
+        $rss->setAttribute("xmlns:podcast", "https://podcastindex.org/namespace/1.0");
+        $rss->setAttribute("xmlns:googleplay", "http://www.google.com/schemas/play-podcasts/1.0");
+        $rss->setAttribute("xmlns:content", "http://purl.org/rss/1.0/modules/content/");
+        $rss->setAttribute("xmlns:rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
+        $rss->setAttribute("xmlns:media", "http://search.yahoo.com/mrss/");
         $rss->setAttribute("version", "2.0");
         $dom->appendChild($rss);
 
@@ -220,9 +252,24 @@ class Manager
             $channel->appendChild($itune_subtitle);
         }
 
+        // Create the <itunes:type>
+        if (!empty($this->feed_type)
+            && ($this->feed_type == 'serial'
+                OR  $this->feed_type == 'episodic')) {
+            $itune_type = $dom->createElement("itunes:type", $this->feed_type);
+            $channel->appendChild($itune_type);
+        }
+
         // Create the <link>
         $link = $dom->createElement("link", $this->link);
         $channel->appendChild($link);
+
+        //Atom Link
+        $atom_link = $dom->createElement("atom:link");
+        $atom_link->setAttribute('href',$this->link.'/rss');
+        $atom_link->setAttribute('rel','self');
+        $atom_link->setAttribute('type','application/rss+xml');
+        $channel->appendChild($atom_link);
 
         // Create the <description>
         $description = $dom->createElement("description");
@@ -250,6 +297,11 @@ class Manager
         $itune_author = $dom->createElement("itunes:author", $this->author);
         $channel->appendChild($itune_author);
 
+        //Locked
+        $locked = $dom->createElement("podcast:locked", $this->locked);
+        $locked->setAttribute('owner', $this->email);
+        $channel->appendChild($locked);
+
         // Create the <itunes:owner>
         $itune_owner = $dom->createElement("itunes:owner");
         $itune_owner_name = $dom->createElement("itunes:name", $this->author);
@@ -257,14 +309,38 @@ class Manager
         if ($this->email != null) {
             $itune_owner_email = $dom->createElement("itunes:email", $this->email);
             $itune_owner->appendChild($itune_owner_email);
+
+            //managingEditor
+            $managing_editor = $dom->createElement("managingEditor",$this->email.' ('.$this->email.')');
+            $channel->appendChild($managing_editor);
         }
         $channel->appendChild($itune_owner);
 
         // Create the <itunes:category>
-        if ($this->category !== null) {
-            $category = $dom->createElement("itunes:category", $this->category);
-            $channel->appendChild($category);
+        foreach ($this->categories as $category => $subcategories) {
+            $node = $channel->appendChild($dom->createElement('itunes:category'));
+            $node->setAttribute("text", $category);
+            foreach ($subcategories as $subcategory => $subcategories) {
+                if (is_array($subcategories)) {
+                    $subnode = $node->appendChild($dom->createElement('itunes:category'));
+                    $subnode->setAttribute("text", $subcategory);
+                    foreach ($subcategories as $subsubcategory) {
+                        $subsubnode = $subnode->appendChild($dom->createElement('itunes:category'));
+                        $subsubnode->setAttribute("text", $subsubcategory);
+                    }
+                } else {
+                    $subnode = $node->appendChild($dom->createElement('itunes:category'));
+                    $subnode->setAttribute("text", $subcategories);
+                }
+            }
+            $channel->appendChild($node);
         }
+        // Create the <itunes:explicit>
+        if ($this->explicit !== null) {
+            $explicit = $dom->createElement("itunes:explicit", $this->explicit);
+            $channel->appendChild($explicit);
+        }
+
 
         // Create the <language>
         if ($this->language !== null) {
@@ -298,8 +374,13 @@ class Manager
         if ($this->pubDate == null) {
             $this->pubDate = new DateTime();
         }
+        if (is_string($this->pubDate)) {
+            $this->pubDate = new DateTime($this->pubDate);
+        }
         $pubDate = $dom->createElement("pubDate", $this->pubDate->format(DATE_RFC2822));
         $channel->appendChild($pubDate);
+        $lastBuildDate = $dom->createElement("lastBuildDate", $this->pubDate->format(DATE_RFC2822));
+        $channel->appendChild($lastBuildDate);
 
         // Return the DOM
         return $dom;
